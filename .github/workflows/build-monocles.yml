@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 150
 
     steps:
       - uses: actions/checkout@v4
@@ -14,22 +14,56 @@ jobs:
       - name: Unzip Monocles-clean.zip
         run: unzip -q -o Monocles-clean.zip -d project
 
+      - name: Get libsignal fork (pq-omemo-2)
+        run: |
+          D=project/monocles_chat/deps/libsignal
+          rm -rf $D
+          git clone --depth 1 --branch v0.94.1 https://codeberg.org/monocles/pq-omemo-2.git $D \
+            || git clone --depth 1 https://codeberg.org/monocles/pq-omemo-2.git $D
+          ls $D
+          ls $D/java
+
+      - name: Use the fork in settings.gradle
+        run: |
+          cat >> project/monocles_chat/settings.gradle <<'EOT'
+
+          includeBuild('deps/libsignal/java') {
+              dependencySubstitution {
+                  substitute module('org.signal:libsignal-android') using project(':android')
+              }
+          }
+          EOT
+          tail -12 project/monocles_chat/settings.gradle
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          build-root-directory: project/monocles_chat
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler clang cmake llvm
+
+      - name: Install Rust targets
+        working-directory: project/monocles_chat/deps/libsignal
+        run: |
+          rustup show
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
 
       - name: Install Android NDK 28.2
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" "platforms;android-37" "build-tools;37.0.0" || true
 
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          build-root-directory: project/monocles_chat
+
       - name: Build debug APK
         working-directory: project/monocles_chat
+        env:
+          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/28.2.13676358
         run: |
           chmod +x gradlew
           ./gradlew assembleMonocleschatFreeDebug --no-daemon
