@@ -1,0 +1,41 @@
+name: Unzip and Build Monocles APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip Monocles-clean.zip
+        run: unzip -q -o Monocles-clean.zip -d project
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          build-root-directory: project/monocles_chat
+
+      - name: Install Android NDK 28.2
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" "platforms;android-37" "build-tools;37.0.0" || true
+
+      - name: Build debug APK
+        working-directory: project/monocles_chat
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleMonocleschatFreeDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Monocles-debug-apk
+          path: project/monocles_chat/build/outputs/apk/**/*.apk
